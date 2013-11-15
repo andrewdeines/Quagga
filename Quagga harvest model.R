@@ -12,7 +12,7 @@ library(polynom)
 #################Populatio Model structure and paramters are mostly comming from CASAGRANDI et al 2007 Zebra mussel model
 ###These initial parameters yeild a stable population like in CASAGRANDI Fig2e
 class<-c(1,2,3,4)#a 4 stage life history, skipping velegers
-N.init<-N.init<-c(0,50,50,50)#dnorm(class, mean = 2, sd = .5, log=F)*30000  #initial class distribution, follows a log-normal distribution to approximate Cope 
+N.init<-c(0,50,50,50)  #dnorm(class, mean = 2, sd = .5, log=F)*30000 #initial class distribution, follows a log-normal distribution to approximate Cope 
 sig<-c(0.00001,.88,.41,.35,.04)#Natural survivorship of each age class, approx means of what CASAGRANDI considered
 fert<-c(0,.24e6,.456e6,.795e6)#Fertility of each age class, CASAGRANDI fig 2
 B.ini<-.001 # is filtration rate of velegers by adualts, but it's just a scaler, so doesn't matter except to get the population sizes to look right
@@ -21,24 +21,26 @@ wgt<-c(0,1e-04,1e-03,1e-02) #the average weight (kg) of each class
 
 ###Market Parameters and functions 
 a.Q<-200 	#the max willingness to pay for one kg
-b.Q<-4500	#the max quantity in kg
+b.Q<-100	#the max quantity in kg
 c.Q<-5 	# cost of a unit of effort, on average, rather than some upstart cost
 q.Q<-1e-3   #the fraction of the population harvested by one unit of effort 
 M.init<-1e6 #Max value of ecosystem services
 d<-0.3 #discount rate
-harv<-function (a=a.Q,b=b.Q,c=c.Q,q=q.Q,N) {n<-sum(N)
+harv<-function (a=a.Q,b=b.Q,c=c.Q,q=q.Q,N) {
+	n<-sum(N)
 	if (n<=0) return (0) 
-	H<-b*(1-(c/(a*q*sum(n))))
-	if (H<0) return (0) else return (H)} 
+	H<-b*(1-(c/(a*q*n)))
+	if (H<0) return (0) else return (H)
+	} 
 price<-function (a,b,xh) {if (xh<=0) return(a)  ##Price function: simple linear model, how much is a harvest worth to SELL?
 	price<-a*(1-xh/b) 
 	if (price<0) return (0) else return (price)}
 
 ###Population growth model equations
 n1<-function(N=N.init,s=sig,f=fert,B=B.ini) s[1] *exp(-B*sum(N))* sum(f*N/2)       #Survival & fertility for velegers, that is the number of velegers that settle
-n2<-function(s=sig,N=N.init,V=V.init,a1,b1,q1) as.numeric(s[2]*N[1]*(1-V[1]*harv(N=N,a=a1,b=b1,q=q1)/sum(N)))
-n3<-function(s=sig,N=N.init,V=V.init,a1,b1,q1) as.numeric(s[3]*N[2]*(1-V[2]*harv(N=N,a=a1,b=b1,q=q1)/sum(N)))
-n4<-function(s=sig,N=N.init,V=V.init,a1,b1,q1) as.numeric(s[4]*N[3]*(1-V[3]*harv(N=N,a=a1,b=b1,q=q1)/sum(N)) +s[5]*N[4]*(1-V[4]*harv(N=N,a=a1,b=b1,q=q1)/sum(N)))
+n2<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H) as.numeric(s[2]*N[1]*(1-V[1]/sum(V)*H/sum(N*V)))
+n3<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H) as.numeric(s[3]*N[2]*(1-V[2]/sum(V)*H/sum(N*V)))
+n4<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H) as.numeric(s[4]*N[3]*(1-V[3]/sum(V)*H/sum(N*V)) +s[5]*N[4]*(1-V[4]/sum(V)*H/sum(N*V)))
 #####
 #####Impact Curves
 yoko<-function (n,u,b,Y,M){ #these are named close to how Yokomizo names varibles
@@ -51,15 +53,15 @@ K.init<-50000#Carrying capacity, only for Yoko impact curves density/square mete
 
 ##A model to simulate the populations Over time
 
-quagga<-function(pars,N=N.init,T=25,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,K=K.init,Q=q.Q,C=c.Q){    #T=time, par<-c(a=a.Q,b=b.Q), the demand parameters
+quagga<-function(pars,N=N.init,T=25,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,K=K.init,Q=q.Q){    #T=time, par<-c(a=a.Q,b=b.Q), the demand parameters
 	pop.t<-data.frame(n.1=N.init[1],n.2=N.init[2],n.3=N.init[3],n.4=N.init[4],P=0,H=0,Ct=0,ES=0)  #,p.2=0,p.3=0,p.4=0) 
 	for (t in 2:T) { 
 		Ntm1<-pop.t[t-1,1:4]
-		Ht<-harv(a=pars[1],b=pars[2],c=c1,q=Q,sum(Ntm1)) #Harvest after last reproduction
-		Pt<-if (Ht<=0) 0 else  price(a=pars[1],b=pars[2],Ht)
-		Ct<-C/(Q*sum(V*Ntm1)) #cost of a unit of effort to harvest of the vulnerable population, if harvesting occurs.
-		Nt<- c(  n1(N=pop.t[t-1,1:4]),  n2(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q), 
-			 n3(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q),   n4(N=pop.t[t-1,1:4],V=V,,a1=pars[1],b1=pars[2],q1=Q)   )  
+		Ht<-harv(a=pars[1],b=min(pars[2],sum(V*Ntm1))   ,c=c1,q=Q,N=sum(V*Ntm1)) #Harvest after last reproduction
+		Pt<-price(a=pars[1],b=pars[2],Ht)
+		Ct<-c1/(Q*sum(V*Ntm1)) #cost of a unit of effort to harvest from the vulnerable population, if harvesting occurs.
+		Nt<- c(  n1(N=pop.t[t-1,1:4]),  n2(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Ht), 
+			 n3(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Ht),   n4(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Ht)   )  
 		ES<-yoko(n=sum(Nt),u=y[1],b=y[2],Y=K,M=M)#ecosystem service value at Nt
 		pop.t[t,]<-c(Nt,Pt,Ht,Ct,ES)
 	}
@@ -68,11 +70,13 @@ quagga<-function(pars,N=N.init,T=25,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,K=K.init,
 matplot(quagga(pars=c(a.Q,b.Q),V=c(0,.6,.6,.6))[1:4],type="b")
 #####
 #We want to find the DEMAND (a and b) that maximizes P*H-C*H+amenity over the time
-
-	sim<-quagga(pars=c(10000,5000),V=c(0,.6,.6,.6))[-1,]
-	value.t<-(sim$P * sim$H) - (sim$Ct*sim$H) #The undiscounted value
-	sum(exp(-d*1:dim(sim)[1])*value.t)##the net present value under given conditions.
-	
+demand.fn<-function (pars,N=N.init,T=25,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,K=K.init,Q=q.Q){
+		sim<-quagga(pars=pars,V=c(0,.6,.6,.6))[-1,]
+		value.t<-(sim$P * sim$H) - (sim$Ct*sim$H) #The undiscounted value
+		sum(exp(-d*1:dim(sim)[1])*value.t)##the net present value under given conditions
+		}
+		#demand.opt.fn(pars=c(a.Q,b.Q),V=c(0,.6,.6,.6))#just seeing if the function works
+demand.opt<-optim(par=c(1e6,200),fn=demand.fn,V=c(0,.6,.6,.6),method="L-BFGS-B",lower=c(0,1),upper=c(200,K.init))
 	
 
 
