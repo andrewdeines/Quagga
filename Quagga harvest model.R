@@ -2,7 +2,7 @@
 ###opening stuff
 setwd("G:\Quagga\Qmodel")
 library(polynom)
-
+library(lattice)
 #################
 #Psuedo Code
 #1) Based on a given number of life stages
@@ -56,12 +56,12 @@ K.init<-50000#Carrying capacity, only for Yoko impact curves density/square mete
 
 ##A model to simulate the populations Over time
 
-quagga<-function(pars,N=N.init,T=25,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q,W=wgt,K=K.init){    #T=time, par<-c(a=a.Q,b=b.Q), the demand parameters
+quagga<-function(pars,N=N.init,T=5,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q,W=wgt,K=K.init){    #T=time, par<-c(a=a.Q,b=b.Q), the demand parameters
 	pop.t<-data.frame( n.1=N.init[1],n.2=N.init[2],n.3=N.init[3],n.4=N.init[4],P=0,H=0,Ct=0,ES=0)  #,p.2=0,p.3=0,p.4=0) 
 	for (t in 2:T) { 
 		Ntm1<-pop.t[t-1,1:4]
 		Ht<-harv(a=pars[1],b=pars[2],c=c1,q=Q,N=sum(V*Ntm1*W)) #Harvest in kg after last reproduction
-		Pt<-price(a=pars[1],b=pars[2],Ht)	#price per unit weight
+		Pt<-price(a=pars[1],b=pars[2],Ht)	#price per unit weight at the given level of harvest
 		Ct<-c1/(Q*sum(V*Ntm1*W)) #cost of a unit of effort to harvest from the vulnerable population, if harvesting occurs.
 		Nt<- c(  n1(N=pop.t[t-1,1:4]),  n2(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Ht,W=W), 
 			 n3(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Ht,W=W),   n4(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Ht,W=W)   )
@@ -81,9 +81,9 @@ demand.fn<-function (pars,N=N.init,T=25,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q
 		#demand.fn(pars=c(301.0977, 1599.8947),V=c(0,.6,.6,.6))#just seeing if the function works
 demand.opt<-optim(par=c(1,2000),fn=demand.fn,V=c(0,.6,.6,.6),ES.inc=F,control=list(trace=0, reltol=1e-8))
 	
-
-
-
+grid<-expand.grid(a=seq(0,20,.5),b=seq(0,1000,5))
+hey<-cbind(grid, z=apply(grid,1,demand.fn))
+wireframe(z~a*b,data=hey,colorkey=T,drape=T)
 
 
 
