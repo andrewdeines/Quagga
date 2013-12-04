@@ -16,7 +16,7 @@ N.init<-c(0,50,50,50)  #dnorm(class, mean = 2, sd = .5, log=F)*30000 #initial cl
 sig<-c(0.00001,.88,.41,.35,.04)#Natural survivorship of each age class, approx means of what CASAGRANDI considered
 fert<-c(0,.24e6,.456e6,.795e6)#Fertility of each age class, CASAGRANDI fig 2
 B.ini<-.001 # is filtration rate of velegers by adualts, but it's just a scaler, so doesn't matter except to get the population sizes to look right
-V.init<-c(0,0,0,0) #Vulnerability to harvest
+V.init<-c(0,1e-5,1e-5,1e-5) #Vulnerability to harvest, needs to be none-zero for math to work, so use something very small
 wgt<-c(0,1e-04,1e-03,1e-02) #the average weight (kg) of each class
 
 ###Market Parameters and functions 
@@ -25,7 +25,7 @@ b.Q<-10000	#the max quantity in kg
 c.Q<-5 	# cost of a unit of effort, on average, rather than some upstart cost
 q.Q<-1e-3   #the fraction of the population harvested by one unit of effort 
 M.init<-1e6 #Max value of ecosystem services
-d<-0.3 #discount rate
+d<-0.03 #discount rate
 harv<-function (a=a.Q,b=b.Q,c=c.Q,q=q.Q,N) {
 	n<-sum(N)
 	#if (n<=0) return (0) 
@@ -52,38 +52,36 @@ yoko<-function (n,u,b,Y,M){ #these are named close to how Yokomizo names varible
 	M-M*C*(1/(1+exp(-(n/Y-u)/b))-B) }
 	##M is the max value of the ecosystem service, Y is carrying Capacity, n is population, u & b are shape parameters
 YY<-list(i=c(u=0,b=.1),ii=c(u=0.5,b=.1),iii=c(u=1,b=1),iv=c(u=1,b=0.1))##parameters for 4 Yoko functional forms
-K.init<-50000#Carrying capacity, only for Yoko impact curves density/square meter, a large guess based on densities in Cope
+K.init<-500000#Carrying capacity, only for Yoko impact curves density/square meter, a large guess based on densities in Cope
 
-##A model to simulate the populations Over time
+##A model to simulate the populations and harvest over time
 
-quagga<-function(pars,N=N.init,T=5,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q,W=wgt,K=K.init){    #T=time, par<-c(a=a.Q,b=b.Q), the demand parameters
-	pop.t<-data.frame( n.1=N.init[1],n.2=N.init[2],n.3=N.init[3],n.4=N.init[4],P=0,H=0,Ct=0,ES=0)  #,p.2=0,p.3=0,p.4=0) 
+quagga<-function(pars=c(a.Q,b.Q),N=N.init,T=5,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q,W=wgt,K=K.init,SA=50000){    #T=time, par<-c(a=a.Q,b=b.Q), the demand parameters, SA=surface area
+	pop.t<-data.frame( n.1=N.init[1],n.2=N.init[2],n.3=N.init[3],n.4=N.init[4],N.tot=0,P=0,H=0,R=0,Ct=0,Pt=0,ES=0)  #,p.2=0,p.3=0,p.4=0) 
 	for (t in 2:T) { 
-		Ntm1<-pop.t[t-1,1:4]
-		Ht<-harv(a=pars[1],b=pars[2],c=c1,q=Q,N=sum(V*Ntm1*W)) #Harvest in kg after last reproduction
-		Pt<-price(a=pars[1],b=pars[2],Ht)	#price per unit weight at the given level of harvest
-		Ct<-c1/(Q*sum(V*Ntm1*W)) #cost of a unit of effort to harvest from the vulnerable population, if harvesting occurs.
-		Nt<- c(  n1(N=pop.t[t-1,1:4]),  n2(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Ht,W=W), 
-			 n3(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Ht,W=W),   n4(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Ht,W=W)   )
-		ES<-yoko(n=sum(Nt),u=y[1],b=y[2],Y=K,M=M)#ecosystem service value at Nt
-		pop.t[t,]<-c(Nt,Pt,Ht,Ct,ES)
+		Ntm1<-pop.t[t-1,1:4]#population for a square meter
+		N.tot<-Ntm1*SA #the population throughout the water body
+		H.raw<-optimize(f=function (H){ H*(price(a=pars[1],b=pars[2],H) - c1/(Q*sum(V*N.tot*W)))  } , interval=c(0,sum(N.tot*W)),maximum=T)#the harvest in numbers
+ 		Ht<-if (H.raw$objective<0) 0 else H.raw$maximum
+		Hm<-Ht/SA #harvest per sq meter
+		Rt<- H.raw$objective#the net revenue
+		Ct<- c1/(Q*sum(V*Ntm1*W))
+		Pt<- price(a=a1,b=b1,Ht)
+		Nt<- c(  n1(N=pop.t[t-1,1:4]),  n2(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Hm,W=W), 
+			 n3(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Hm,W=W),   n4(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Hm,W=W)   )
+		ES<-yoko(n=sum(Nt*SA),u=y[1],b=y[2],Y=K,M=M)#ecosystem service value at Nt for the whole lake
+		pop.t[t,]<-c(Nt,sum(Nt)*SA,Pt,Ht,Rt,Ct,Pt,ES)
 	}
 	return(pop.t)
 }#end function
 matplot(quagga(pars=c(a.Q,b.Q),V=c(0,.6,.6,.6))[1:4],type="b")
-#####
-#We want to find the DEMAND (a and b) that maximizes P*H-C*H+amenity over the time
-demand.fn<-function (pars,N=N.init,T=25,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q,ES.inc=T){###Pure competition OR externality version
-		sim<-quagga(pars=pars,V=V)[-1,]
-		value.t<-(sim$P * sim$H) - (sim$Ct*sim$H)+ (if(ES.inc==T)sim$ES else 0) #The undiscounted value
-		sum(exp(-d*1:dim(sim)[1])*value.t)##the net present value under given conditions
-		}
-		#demand.fn(pars=c(301.0977, 1599.8947),V=c(0,.6,.6,.6))#just seeing if the function works
-demand.opt<-optim(par=c(1,2000),fn=demand.fn,V=c(0,.6,.6,.6),ES.inc=F,control=list(trace=0, reltol=1e-8))
-	
-grid<-expand.grid(a=seq(0,20,.5),b=seq(0,1000,5))
-hey<-cbind(grid, z=apply(grid,1,demand.fn))
-wireframe(z~a*b,data=hey,colorkey=T,drape=T)
+quagga.LT<-function (pars=c(a.Q,b.Q),N=N.init,T=5,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q,W=wgt,K=K.init,SA=50000,ES.inc=TRUE) {  # long term value
+	sim<-quagga(pars,N,T,c1,V,y,M,Q,W,K,SA)[-1,]
+	sim$R[sim$R<0]<-0
+	value.t<-sim$R + (if(ES.inc==TRUE)sim$ES else 0)
+	list(  long.term=sum(exp(-d*1:dim(sim)[1])*value.t), sim=sim)
+	}
+
 
 
 
