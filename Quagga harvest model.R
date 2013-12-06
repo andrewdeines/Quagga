@@ -40,10 +40,10 @@ price<-function (a,b,xh) {#if (xh<=0) return(a)  ##Price function: simple linear
 	}
 
 ###Population growth model equations
-n1<-function(N=N.init,s=sig,f=fert,B=B.ini) s[1] *exp(-B*sum(N))* sum(f*N/2)       #Survival & fertility for velegers, that is the number of velegers that settle
-n2<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H,W) as.numeric(s[2]*N[1]*(1-V[1]/sum(V)*max(H,0)/sum(N*V*W)))
-n3<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H,W) as.numeric(s[3]*N[2]*(1-V[2]/sum(V)*max(H,0)/sum(N*V*W)))
-n4<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H,W) as.numeric(s[4]*N[3]*(1-V[3]/sum(V)*max(H,0)/sum(N*V*W)) +s[5]*N[4]*(1-V[4]/sum(V)*max(H,0)/sum(N*V*W)))
+n1<-function(N=N.init,s=sig,f=fert,B=B.ini) floor(s[1] *exp(-B*sum(N))* sum(f*N/2) )      #Survival & fertility for velegers, that is the number of velegers that settle
+n2<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H,W) if (sum(N)==0) 0 else floor(as.numeric(s[2]*N[1]*(1-V[1]/sum(V)*max(H,0)/sum(N*V*W))) )
+n3<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H,W) if (sum(N)==0) 0 else floor(as.numeric(s[3]*N[2]*(1-V[2]/sum(V)*max(H,0)/sum(N*V*W))))
+n4<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H,W) if (sum(N)==0) 0 else floor(as.numeric(s[4]*N[3]*(1-V[3]/sum(V)*max(H,0)/sum(N*V*W)) +s[5]*N[4]*(1-V[4]/sum(V)*max(H,0)/sum(N*V*W))))
 #####
 #####Impact Curves
 yoko<-function (n,u,b,Y,M){ #these are named close to how Yokomizo names varibles
@@ -57,32 +57,40 @@ K.init<-500000#Carrying capacity, only for Yoko impact curves density/square met
 ##A model to simulate the populations and harvest over time
 
 quagga<-function(pars=c(a.Q,b.Q),N=N.init,T=5,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q,W=wgt,K=K.init,SA=50000){    #T=time, par<-c(a=a.Q,b=b.Q), the demand parameters, SA=surface area
-	pop.t<-data.frame( n.1=N.init[1],n.2=N.init[2],n.3=N.init[3],n.4=N.init[4],N.tot=0,P=0,H=0,R=0,Ct=0,Pt=0,ES=0)  #,p.2=0,p.3=0,p.4=0) 
+	pop.t<-data.frame( n.1=N[1],n.2=N[2],n.3=N[3],n.4=N[4],N.tot=0,H=0,R=0,Ct=0,Pt=0,ES=0)  #,p.2=0,p.3=0,p.4=0) 
 	for (t in 2:T) { 
 		Ntm1<-pop.t[t-1,1:4]#population for a square meter
 		N.tot<-Ntm1*SA #the population throughout the water body
-		H.raw<-optimize(f=function (H){ H*(price(a=pars[1],b=pars[2],H) - c1/(Q*sum(V*N.tot*W)))  } , interval=c(0,sum(N.tot*W)),maximum=T)#the harvest in numbers
- 		Ht<-if (H.raw$objective<0) 0 else H.raw$maximum
+		Ct<- c1/(Q*sum(V*Ntm1*W))
+		H.raw<-if(sum(Ntm1)<1) list(maximum=0,objective=0) else {
+			optimize(f=function (H){ H*(price(a=pars[[1]],b=pars[[2]],H) - Ct)  } , interval=c(0,sum(N.tot*W)),maximum=T)#the harvest in numbers
+			}
+		Ht<-H.raw$maximum#if (H.raw$objective<0) 0 else H.raw$maximum
 		Hm<-Ht/SA #harvest per sq meter
 		Rt<- H.raw$objective#the net revenue
-		Ct<- c1/(Q*sum(V*Ntm1*W))
-		Pt<- price(a=a1,b=b1,Ht)
+		Pt<- price(a=pars[1],b=pars[1],Ht)
 		Nt<- c(  n1(N=pop.t[t-1,1:4]),  n2(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Hm,W=W), 
 			 n3(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Hm,W=W),   n4(N=pop.t[t-1,1:4],V=V,a1=pars[1],b1=pars[2],q1=Q,H=Hm,W=W)   )
+		Nt<-sapply(Nt,function (X) max(0,X))#set negative population to 0
 		ES<-yoko(n=sum(Nt*SA),u=y[1],b=y[2],Y=K,M=M)#ecosystem service value at Nt for the whole lake
-		pop.t[t,]<-c(Nt,sum(Nt)*SA,Pt,Ht,Rt,Ct,Pt,ES)
+		pop.t[t,]<-c(Nt,sum(Nt)*SA,Ht,Rt,Ct,Pt,ES)
 	}
 	return(pop.t)
 }#end function
-matplot(quagga(pars=c(a.Q,b.Q),V=c(0,.6,.6,.6))[1:4],type="b")
+matplot(quagga(pars=c(a.Q,b.Q),V=c(0,.6,.6,.6),N=c(1e4,1e3,1e2,1e1),T=10)[1:4],type="b")
 quagga.LT<-function (pars=c(a.Q,b.Q),N=N.init,T=5,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q,W=wgt,K=K.init,SA=50000,ES.inc=TRUE) {  # long term value
 	sim<-quagga(pars,N,T,c1,V,y,M,Q,W,K,SA)[-1,]
 	sim$R[sim$R<0]<-0
 	value.t<-sim$R + (if(ES.inc==TRUE)sim$ES else 0)
-	list(  long.term=sum(exp(-d*1:dim(sim)[1])*value.t), sim=sim)
+	list(  net.pres=sum(exp(-d*1:dim(sim)[1])*value.t), sim=sim)
 	}
 
+###What does a 5yr net present value look like for a range of demand?
+q.grid<-expand.grid(a=seq(1,5,.5), b=seq(1,1e5, 1e3)) #a fishmeal commodity=$1.5/kg
+q.harv<-apply(q.grid,1, function (X) quagga.LT(pars=X, V=V.init,c1=.001, Q=.1,ES.inc=FALSE,N=c(1e6,1e5,1e4,1e3)))
+wireframe(npr~a*b, data=data.frame(q.grid,npr=sapply(q.harv,function (X) X$net.pres )),drape=T )
 
+wireframe(pop~b*a, data=data.frame(q.grid,pop=sapply(q.harv,function(X) tail(X$sim$N.tot,1)) ),drape=T)
 
 
 
