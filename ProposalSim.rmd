@@ -1,0 +1,102 @@
+Simulating and Modeling Zebra mussels proposal
+========================================================
+
+In this script I document the ability to model ZM (or dressinids in general) populations for our proposel to the Great Lakes Fishery Commission to model Quagga mussel populations.  First, I will simulate a time series of ZM populations based on the model of Casagrandi et al (2007), which successfully simulated the essential dynamics of zebra mussel populations based on parameters compiled from the around.  Then, I will take the simulated data, and solve the "inverse" problem of estimating population parameters from the time series of data, following the likelihood method of Dennis et al 1995 and Caswell 2001 (chapter 6.2).  This simulation model deviates from Casagrandi in two ways. 1) A stochastic component was added as multivariate normal environmental process noise, which add some reality to the measurements as well as is needed for inverse estimation. 2) The intial density of each class was set to the mean density for that size over the last 14 years, an  
+
+```{r "Simulate Casgrandi 2007"}
+library(MASS)
+#Survival of stages see table 1
+#Fecundity
+#scaling factor
+
+Casa<-function (S,f,B,N,t,d){#calculate Nt+1 for each stage
+  Nt<-data.frame(n1=NA,n2=NA,n3=NA,n4=NA)
+    Nt[1,]<-N
+  seed<-rnorm(1,73)
+  set.seed(seed)
+  D<-mvrnorm(1,c(0,0,0,0),d)
+  for (i in 2:t){
+   n1<-S[1]*exp(-B*sum(Nt[i-1,]))*(  f[2]*Nt[i-1,2]/2 + f[3]*Nt[i-1,3]/2 +f[4]*Nt[i-1,4]/2)+D[1]
+   n2<-S[2]*Nt[i-1,1]+D[2]
+   n3<-S[3]*Nt[i-1,2]+D[3]
+   n4<-S[4]*Nt[i-1,3]+S[5]*Nt[i-1,4]+D[4]
+   Nt[i,]<- sapply(c(n1,n2,n3,n4),function(x) max(0,x))
+  }#S= survorship vecotr, F=fecundity, B=scaling, N starting population, t is time, d is covar matrix for multivariate normal
+return(list(Nt,seed))}
+Sim1<-Casa(S=c(0.01,0.88,0.41,0.35,0.04),f=c(0,0.24e6,0.465e6,0.795e6),B=1, N=c(0,650,290,81),t=14,
+  d=matrix(c(100,1,1,1,
+              1,10,1,1,
+              1,1,10,1,
+              1,1,1,10),byrow=T,ncol=4) )
+  ##The intial densities are average for size classes (one=1:10mm,two=11:20mm,three=21:max mm) in Lake Erie
+matplot(Sim1[[1]],type="l")
+Sim2<-Casa(S=c(0.01,0.88,0.41,0.35,0.04),f=c(0,0.24e6,0.465e6,0.795e6),B=1, N=c(0,650,290,81),t=14,
+  d=matrix(c(100,1,1,1,
+              1,10,1,1,
+              1,1,10,1,
+              1,1,1,10),byrow=T,ncol=4) )
+matplot(Sim2[[1]],type="l")
+
+```
+
+Two time series were modeled, to see of using two data sets resolved inidentifibiliy problems.
+
+Now the task is to use "inverse" methods to try and recapture the simulation parameters used above. 
+
+```{r "Model Estimation"}
+DM.fun<-function (p,data=list(Sim1[[1]],Sim2[[1]],B=1)) { #####fun to estimate model for given parameters,p
+  S<-exp(p[1:4])/(1+exp(p[1:4]))
+  f<-p[5:7]
+  d1<-p[8:9]
+  d2<-p[10:11]
+  data1<-data[[1]]
+  Mt1<-data.frame(n2=NA,n3=NA,n4=NA)
+    Mt1[1,]<-data1[1,2:4]#mt-1, the first year except no velegers
+  for(i in 2:dim(data1)[1]){
+   m2<-S[1]*exp(-B*sum(Mt1[i-1,]))*(  f[1]*Mt1[i-1,1]/2 + f[2]*Mt1[i-1,2]/2 +f[3]*Mt1[i-1,3]/2)
+   #m2<-log(S[2]*Nt[i-1,1])  #removed since we don't have that data
+   m3<-S[2]*Mt1[i-1,1]
+   m4<-S[3]*Mt1[i-1,2]+S[4]*Mt1[i-1,3]
+   Mt1[i,]<-sapply(c(m2,m3,m4),function(X) max(X,1e-200))
+    }
+  data2<-data[[2]]
+  Mt2<-data.frame(n2=NA,n3=NA,n4=NA)
+    Mt2[1,]<-data2[1,2:4]#mt-1, the first year except no velegers
+  for(i in 2:dim(data2)[1]){
+   m2<-S[1]*exp(-B*sum(Mt2[i-1,]))*(  f[1]*Mt2[i-1,1]/2 + f[2]*Mt2[i-1,2]/2 +f[3]*Mt2[i-1,3]/2)
+   #m2<-log(S[2]*Nt[i-1,1])  #removed since we don't have that data
+   m3<-S[2]*Mt2[i-1,1]
+   m4<-S[3]*Mt2[i-1,2]+S[4]*Mt2[i-1,3]
+   Mt2[i,]<-sapply(c(m2,m3,m4),function(X) max(X,1e-200))
+    }
+  
+  #the covariance matrix, 
+  sig1<-matrix(c(d1[1],d1[2],d1[2],
+                d1[2],d1[1],d1[2],
+                d1[2],d1[2],d1[1]),byrow=T,ncol=3)
+  sig2<-matrix(c(d2[1],d2[2],d2[2],
+                d2[2],d2[1],d2[2],
+                d2[2],d2[2],d2[1]),byrow=T,ncol=3)  
+  ##Likelihood
+  mod1<-log(Mt1[-1,])#the estimated model, minus first year (not modeled)
+  dat1<-log(data1[-1,-1]+1e-200)#the simulated data, minus the first year and first stage
+  LL1<-(dim(dat1)[1]/2)*log(det(sig1)) - 0.5* sum(  sapply(1:dim(dat1)[1],function(tt) {  
+      as.matrix(mod1[tt,] - dat1[tt,])%*%ginv(sig1)%*%t( as.matrix(mod1[tt,] - dat1[tt,]))
+      })) #if solve(sig) throws errors, try ginv(sig)
+  mod2<-log(Mt2[-1,])#the estimated model, minus first year (not modeled)
+  dat2<-log(data2[-1,-1]+1e-200)#the simulated data, minus the first year and first stage
+  LL2<-(dim(dat2)[1]/2)*log(det(sig2)) - 0.5* sum(  sapply(1:dim(dat2)[1],function(tt) {  
+      as.matrix(mod2[tt,] - dat2[tt,])%*%ginv(sig2)%*%t( as.matrix(mod2[tt,] - dat2[tt,]))
+      })) 
+  -LL1+LL2
+}###End Function
+
+p<-c(c(0.88,0.41,0.35,0.04), #S
+            c(0.24e6,0.465e6,0.795e6), #f
+            c(1,.1),                  #d1
+            c(1,.2))  #d2
+hey<-optim(par=p,fn=DM.fun,control=list(maxit=1000,trace=0))
+
+exp(hey$par[1:4])/(1+exp(hey$par[1:4]))
+```
+NEED TO GET SURVIVAL BETWEEN ZERO AND ONE, probably bayes...But above I used a logistic function.  In which the model didn't enjoy converging, and it was clear that survival estimates where on the boundary, so not really working.  

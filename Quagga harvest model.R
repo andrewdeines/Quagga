@@ -19,7 +19,7 @@ B.ini<-.001 # is filtration rate of velegers by adualts, but it's just a scaler,
 V.init<-c(0,1e-5,1e-5,1e-5) #Vulnerability to harvest, needs to be none-zero for math to work, so use something very small
 wgt<-c(0,1e-04,1e-03,1e-02) #the average weight (kg) of each class
 
-###Market Parameters and functions 
+###Market Parameters and functions ####
 a.Q<-20	#the max willingness to pay for one kg
 b.Q<-10000	#the max quantity in kg
 c.Q<-5 	# cost of a unit of effort, on average, rather than some upstart cost
@@ -38,14 +38,12 @@ price<-function (a,b,xh) {#if (xh<=0) return(a)  ##Price function: simple linear
 	a*(1-xh/b) 
 	#if (price<0) return (0) else return (price)
 	}
-
-###Population growth model equations
+###Population growth model equations########
 n1<-function(N=N.init,s=sig,f=fert,B=B.ini) floor(s[1] *exp(-B*sum(N))* sum(f*N/2) )      #Survival & fertility for velegers, that is the number of velegers that settle
 n2<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H,W) if (sum(N)==0) 0 else floor(as.numeric(s[2]*N[1]*(1-V[1]/sum(V)*max(H,0)/sum(N*V*W))) )
 n3<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H,W) if (sum(N)==0) 0 else floor(as.numeric(s[3]*N[2]*(1-V[2]/sum(V)*max(H,0)/sum(N*V*W))))
 n4<-function(s=sig,N=N.init,V=V.init,a1,b1,q1,H,W) if (sum(N)==0) 0 else floor(as.numeric(s[4]*N[3]*(1-V[3]/sum(V)*max(H,0)/sum(N*V*W)) +s[5]*N[4]*(1-V[4]/sum(V)*max(H,0)/sum(N*V*W))))
-#####
-#####Impact Curves
+#####Impact Curves#####
 yoko<-function (n,u,b,Y,M){ #these are named close to how Yokomizo names varibles
 	B<-1/(1+exp(u/b))
 	C<-(1+exp(-(1-u)/b)) /(1-B*(1+exp(-(1-u)/b)))
@@ -53,8 +51,7 @@ yoko<-function (n,u,b,Y,M){ #these are named close to how Yokomizo names varible
 	##M is the max value of the ecosystem service, Y is carrying Capacity, n is population, u & b are shape parameters
 YY<-list(i=c(u=0,b=.1),ii=c(u=0.5,b=.1),iii=c(u=1,b=1),iv=c(u=1,b=0.1))##parameters for 4 Yoko functional forms
 K.init<-500000#Carrying capacity, only for Yoko impact curves density/square meter, a large guess based on densities in Cope
-
-##A model to simulate the populations and harvest over time
+##A model to simulate the populations and harvest over time########
 
 quagga<-function(pars=c(a.Q,b.Q),N=N.init,T=5,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q,W=wgt,K=K.init,SA=50000){    #T=time, par<-c(a=a.Q,b=b.Q), the demand parameters, SA=surface area
 	pop.t<-data.frame( n.1=N[1],n.2=N[2],n.3=N[3],n.4=N[4],N.tot=0,H=0,R=0,Ct=0,Pt=0,ES=0)  #,p.2=0,p.3=0,p.4=0) 
@@ -77,7 +74,10 @@ quagga<-function(pars=c(a.Q,b.Q),N=N.init,T=5,c1=c.Q,V=V.init,y=YY[[1]],M=M.init
 	}
 	return(pop.t)
 }#end function
-matplot(quagga(pars=c(a.Q,b.Q),V=c(0,.6,.6,.6),N=c(1e4,1e3,1e2,1e1),T=10)[1:4],type="b")
+matplot(quagga(pars=c(a.Q,b.Q),V=V.init,N=N.init,T=30)[1:4],type="b")
+
+
+
 quagga.LT<-function (pars=c(a.Q,b.Q),N=N.init,T=5,c1=c.Q,V=V.init,y=YY[[1]],M=M.init,Q=q.Q,W=wgt,K=K.init,SA=50000,ES.inc=TRUE) {  # long term value
 	sim<-quagga(pars,N,T,c1,V,y,M,Q,W,K,SA)[-1,]
 	sim$R[sim$R<0]<-0
